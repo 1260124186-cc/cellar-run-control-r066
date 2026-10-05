@@ -9,11 +9,34 @@ import (
 type CreateFormulaInput struct {
 	Name                  string
 	Style                 string
+	ProfileName           string
 	TargetOriginalGravity float64
 	TargetFinalGravity    float64
 	MaxFermentationTempC  float64
 	MinimumDays           int
 	MaximumDays           int
+}
+
+type SetFormulaProfileInput struct {
+	ExpectedVersion *int64
+	ProfileName     string
+}
+
+type CreateProfileInput struct {
+	Name        string
+	Parameters  domain.ProfileParameters
+	EffectiveAt time.Time
+}
+
+type UpdateProfileInput struct {
+	ExpectedVersion *int64
+	Parameters      domain.ProfileParameters
+	EffectiveAt     time.Time
+}
+
+type ReviseProfileInput struct {
+	ExpectedVersion *int64
+	EffectiveAt     time.Time
 }
 
 type SetFormulaStepsInput struct {

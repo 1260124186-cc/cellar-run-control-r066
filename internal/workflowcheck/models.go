@@ -8,10 +8,19 @@ import (
 )
 
 type formulaView struct {
-	ID      string               `json:"id"`
-	State   domain.FormulaState  `json:"state"`
-	Version int64                `json:"version"`
-	Steps   []domain.FormulaStep `json:"steps"`
+	ID          string               `json:"id"`
+	State       domain.FormulaState  `json:"state"`
+	Version     int64                `json:"version"`
+	ProfileName string               `json:"profile_name"`
+	Steps       []domain.FormulaStep `json:"steps"`
+}
+
+type profileView struct {
+	ID       string              `json:"id"`
+	Name     string              `json:"name"`
+	Version  int                 `json:"version"`
+	State    domain.ProfileState `json:"state"`
+	Revision int64               `json:"revision"`
 }
 
 type vesselView struct {
@@ -22,12 +31,13 @@ type vesselView struct {
 }
 
 type runView struct {
-	ID           string                      `json:"id"`
-	State        domain.RunState             `json:"state"`
-	Version      int64                       `json:"version"`
-	VesselID     *string                     `json:"vessel_id"`
-	Observations []domain.GravityObservation `json:"observations"`
-	Metrics      *domain.RunMetrics          `json:"metrics"`
+	ID             string                      `json:"id"`
+	State          domain.RunState             `json:"state"`
+	Version        int64                       `json:"version"`
+	VesselID       *string                     `json:"vessel_id"`
+	ProfileBinding *domain.ProfileBinding      `json:"profile_binding"`
+	Observations   []domain.GravityObservation `json:"observations"`
+	Metrics        *domain.RunMetrics          `json:"metrics"`
 }
 
 type pairView struct {
@@ -35,15 +45,29 @@ type pairView struct {
 	Vessel vesselView `json:"vessel"`
 }
 
-func createFormulaPayload(name string) map[string]any {
+func createFormulaPayload(name, profileName string) map[string]any {
 	return map[string]any{
 		"name":                    name,
 		"style":                   "Cellar pilot",
+		"profile_name":            profileName,
 		"target_original_gravity": 1.052,
 		"target_final_gravity":    1.012,
 		"max_fermentation_temp_c": 22.0,
 		"minimum_days":            7,
 		"maximum_days":            21,
+	}
+}
+
+func createProfilePayload(name string, effectiveAt time.Time) map[string]any {
+	return map[string]any{
+		"name":                          name,
+		"min_fermentation_temp_c":       10.0,
+		"max_fermentation_temp_c":       30.0,
+		"min_ferment_days":              0,
+		"max_ferment_days":              120,
+		"min_observations_to_condition": 2,
+		"min_observations_to_complete":  3,
+		"effective_at":                  effectiveAt,
 	}
 }
 

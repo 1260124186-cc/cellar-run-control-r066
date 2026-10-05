@@ -12,6 +12,7 @@ func (s *Service) CreateFormula(input CreateFormulaInput) (domain.Formula, error
 	formula := domain.Formula{
 		Name:                  input.Name,
 		Style:                 input.Style,
+		ProfileName:           input.ProfileName,
 		TargetOriginalGravity: input.TargetOriginalGravity,
 		TargetFinalGravity:    input.TargetFinalGravity,
 		MaxFermentationTempC:  input.MaxFermentationTempC,
@@ -76,6 +77,32 @@ func (s *Service) SetFormulaSteps(
 	return updated, nil
 }
 
+func (s *Service) SetFormulaProfile(
+	id string,
+	input SetFormulaProfileInput,
+) (domain.Formula, error) {
+	var updated domain.Formula
+	err := s.store.Execute(func(snapshot *domain.Snapshot) error {
+		formula, ok := snapshot.Formulas[id]
+		if !ok {
+			return domain.NewError(domain.CodeFormulaNotFound, "formula was not found")
+		}
+		if err := s.checkExpected(formula.Version, input.ExpectedVersion); err != nil {
+			return err
+		}
+		if err := formula.SetProfile(input.ProfileName, s.clock.Now()); err != nil {
+			return err
+		}
+		snapshot.Formulas[id] = formula
+		updated = formula.Clone()
+		return nil
+	})
+	if err != nil {
+		return domain.Formula{}, err
+	}
+	return updated, nil
+}
+
 func (s *Service) ApproveFormula(id string, input VersionInput) (domain.Formula, error) {
 	var updated domain.Formula
 	err := s.store.Execute(func(snapshot *domain.Snapshot) error {
@@ -85,6 +112,27 @@ func (s *Service) ApproveFormula(id string, input VersionInput) (domain.Formula,
 		}
 		if err := s.checkExpected(formula.Version, input.ExpectedVersion); err != nil {
 			return err
+		}
+		if formula.ProfileName == "" {
+			return domain.FieldError(domain.CodeInvalidInput, "profile_name",
+				"must be selected before approval")
+		}
+		profileKey := domain.NameKey(formula.ProfileName)
+		if _, exists := snapshot.ProfileNameIndex[profileKey]; !exists {
+			return domain.NewError(domain.CodeProfileNotFound,
+				"the selected process profile was not found")
+		}
+		published := false
+		for _, profile := range snapshot.Profiles {
+			if domain.NameKey(profile.Name) == profileKey &&
+				profile.State == domain.ProfilePublished {
+				published = true
+				break
+			}
+		}
+		if !published {
+			return domain.NewError(domain.CodeProfileNotPublished,
+				"the selected process profile has no published version")
 		}
 		if err := formula.Approve(s.clock.Now()); err != nil {
 			return err

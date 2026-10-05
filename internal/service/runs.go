@@ -120,10 +120,27 @@ func (s *Service) StartRun(
 		if !ok {
 			return domain.NewError(domain.CodeVesselNotFound, "vessel was not found")
 		}
+		formula, ok := snapshot.Formulas[run.FormulaID]
+		if !ok {
+			return domain.NewError(domain.CodeFormulaNotFound, "attached formula was not found")
+		}
+		if formula.ProfileName == "" {
+			return domain.NewError(domain.CodeProfileNotPublished,
+				"the attached formula has no selected process profile")
+		}
+		profiles := make([]domain.ProcessProfile, 0, len(snapshot.Profiles))
+		for _, profile := range snapshot.Profiles {
+			profiles = append(profiles, profile)
+		}
+		binding, ok := domain.ResolveProfileBinding(profiles, formula.ProfileName, s.clock.Now())
+		if !ok {
+			return domain.NewError(domain.CodeProfileNotEffective,
+				"no published version of the selected process profile is effective yet")
+		}
 		if err := vessel.StartRun(run.ID, s.clock.Now()); err != nil {
 			return err
 		}
-		if err := run.StartFermentation(s.clock.Now()); err != nil {
+		if err := run.StartFermentation(s.clock.Now(), binding); err != nil {
 			return err
 		}
 		snapshot.Runs[id] = run.Clone()

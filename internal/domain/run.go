@@ -1,6 +1,9 @@
 package domain
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 type RunState string
 
@@ -21,6 +24,7 @@ type FermentationRun struct {
 	PlannedVolumeL float64              `json:"planned_volume_liters"`
 	Notes          string               `json:"notes,omitempty"`
 	State          RunState             `json:"state"`
+	ProfileBinding *ProfileBinding      `json:"profile_binding,omitempty"`
 	StartedAt      *time.Time           `json:"started_at,omitempty"`
 	EndedAt        *time.Time           `json:"ended_at,omitempty"`
 	Observations   []GravityObservation `json:"observations"`
@@ -36,6 +40,10 @@ func (r FermentationRun) Clone() FermentationRun {
 	if r.VesselID != nil {
 		value := *r.VesselID
 		cloned.VesselID = &value
+	}
+	if r.ProfileBinding != nil {
+		value := *r.ProfileBinding
+		cloned.ProfileBinding = &value
 	}
 	if r.StartedAt != nil {
 		value := *r.StartedAt
@@ -79,11 +87,13 @@ func (r *FermentationRun) ReserveVessel(vesselID string, now time.Time) error {
 	return nil
 }
 
-func (r *FermentationRun) StartFermentation(now time.Time) error {
+func (r *FermentationRun) StartFermentation(now time.Time, binding ProfileBinding) error {
 	if r.State != RunReserved || r.VesselID == nil {
 		return NewError(CodeRunState, "only a reserved run can start fermentation")
 	}
 	stamp := now.UTC()
+	binding.BoundAt = stamp
+	r.ProfileBinding = &binding
 	r.State = RunFermenting
 	r.StartedAt = &stamp
 	r.UpdatedAt = stamp
@@ -123,9 +133,11 @@ func (r *FermentationRun) BeginConditioning(now time.Time) error {
 	if r.State != RunFermenting {
 		return NewError(CodeRunState, "only a fermenting run can enter conditioning")
 	}
-	if len(r.Observations) < 2 {
-		return NewError(CodeRunState,
-			"conditioning requires at least two observations")
+	required := r.profileParameters().MinObservationsToCondition
+	if len(r.Observations) < required {
+		return NewError(CodeRunState, fmt.Sprintf(
+			"conditioning requires at least %d observations under %s",
+			required, r.profileDescription()))
 	}
 	r.State = RunConditioning
 	r.UpdatedAt = now.UTC()
@@ -137,12 +149,33 @@ func (r *FermentationRun) Complete(originalGravity float64, now time.Time) error
 	if r.State != RunConditioning {
 		return NewError(CodeRunState, "only a conditioning run can be completed")
 	}
-	if len(r.Observations) < 3 {
-		return NewError(CodeRunState,
-			"completion requires at least three observations")
+	params := r.profileParameters()
+	if len(r.Observations) < params.MinObservationsToComplete {
+		return NewError(CodeRunState, fmt.Sprintf(
+			"completion requires at least %d observations under %s",
+			params.MinObservationsToComplete, r.profileDescription()))
 	}
 	stamp := now.UTC()
+	if r.StartedAt != nil {
+		elapsed := stamp.Sub(r.StartedAt.UTC())
+		if minimum := time.Duration(params.MinFermentDays) * 24 * time.Hour; elapsed < minimum {
+			return NewError(CodeProfileViolation, fmt.Sprintf(
+				"%s expects at least %d days of fermentation",
+				r.profileDescription(), params.MinFermentDays))
+		}
+		if maximum := time.Duration(params.MaxFermentDays) * 24 * time.Hour; elapsed > maximum {
+			return NewError(CodeProfileViolation, fmt.Sprintf(
+				"%s expects at most %d days of fermentation",
+				r.profileDescription(), params.MaxFermentDays))
+		}
+	}
 	final := r.Observations[len(r.Observations)-1]
+	if final.TemperatureC < params.MinFermentationTempC ||
+		final.TemperatureC > params.MaxFermentationTempC {
+		return NewError(CodeProfileViolation, fmt.Sprintf(
+			"%s expects a fermentation temperature between %.1f and %.1f Celsius",
+			r.profileDescription(), params.MinFermentationTempC, params.MaxFermentationTempC))
+	}
 	metrics := CalculateMetrics(originalGravity, final.Gravity, len(r.Observations))
 	r.Metrics = &metrics
 	r.State = RunCompleted
@@ -150,6 +183,20 @@ func (r *FermentationRun) Complete(originalGravity float64, now time.Time) error
 	r.UpdatedAt = stamp
 	r.Version++
 	return nil
+}
+
+func (r FermentationRun) profileParameters() ProfileParameters {
+	if r.ProfileBinding == nil {
+		return DefaultProfileParameters()
+	}
+	return r.ProfileBinding.Parameters
+}
+
+func (r FermentationRun) profileDescription() string {
+	if r.ProfileBinding == nil {
+		return ProfileBinding{}.Describe()
+	}
+	return r.ProfileBinding.Describe()
 }
 
 func (r *FermentationRun) Abort(now time.Time) error {

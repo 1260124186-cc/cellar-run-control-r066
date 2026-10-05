@@ -21,6 +21,12 @@ const (
 	CodeRunConflict         Code = "run_code_conflict"
 	CodeRunState            Code = "invalid_run_state"
 	CodeObservationConflict Code = "observation_conflict"
+	CodeProfileNotFound     Code = "profile_not_found"
+	CodeProfileNameConflict Code = "profile_name_conflict"
+	CodeProfileState        Code = "invalid_profile_state"
+	CodeProfileNotPublished Code = "profile_not_published"
+	CodeProfileNotEffective Code = "profile_not_effective"
+	CodeProfileViolation    Code = "profile_violation"
 	CodeRevisionConflict    Code = "revision_conflict"
 	CodeStorage             Code = "storage_error"
 )

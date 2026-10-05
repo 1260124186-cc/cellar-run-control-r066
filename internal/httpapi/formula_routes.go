@@ -10,6 +10,7 @@ import (
 type createFormulaRequest struct {
 	Name                  string  `json:"name"`
 	Style                 string  `json:"style"`
+	ProfileName           string  `json:"profile_name"`
 	TargetOriginalGravity float64 `json:"target_original_gravity"`
 	TargetFinalGravity    float64 `json:"target_final_gravity"`
 	MaxFermentationTempC  float64 `json:"max_fermentation_temp_c"`
@@ -21,6 +22,10 @@ type setStepsRequest struct {
 	Steps []domain.FormulaStep `json:"steps"`
 }
 
+type setFormulaProfileRequest struct {
+	ProfileName string `json:"profile_name"`
+}
+
 func registerFormulaRoutes(mux *http.ServeMux, app *service.Service) {
 	mux.HandleFunc("POST /v1/formulas", func(response http.ResponseWriter, request *http.Request) {
 		body, err := decodeJSON[createFormulaRequest](response, request)
@@ -30,6 +35,7 @@ func registerFormulaRoutes(mux *http.ServeMux, app *service.Service) {
 		formula, err := app.CreateFormula(service.CreateFormulaInput{
 			Name:                  body.Name,
 			Style:                 body.Style,
+			ProfileName:           body.ProfileName,
 			TargetOriginalGravity: body.TargetOriginalGravity,
 			TargetFinalGravity:    body.TargetFinalGravity,
 			MaxFermentationTempC:  body.MaxFermentationTempC,
@@ -72,6 +78,24 @@ func registerFormulaRoutes(mux *http.ServeMux, app *service.Service) {
 		}
 		formula, err := app.SetFormulaSteps(request.PathValue("id"),
 			service.SetFormulaStepsInput{ExpectedVersion: expected, Steps: body.Steps})
+		if err != nil {
+			writeDomainError(response, err)
+			return
+		}
+		writeJSON(response, http.StatusOK, formula)
+	})
+
+	mux.HandleFunc("PUT /v1/formulas/{id}/profile", func(response http.ResponseWriter, request *http.Request) {
+		body, err := decodeJSON[setFormulaProfileRequest](response, request)
+		if !handleDecode(response, err) {
+			return
+		}
+		expected, err := expectedVersion(request)
+		if !handleDecode(response, err) {
+			return
+		}
+		formula, err := app.SetFormulaProfile(request.PathValue("id"),
+			service.SetFormulaProfileInput{ExpectedVersion: expected, ProfileName: body.ProfileName})
 		if err != nil {
 			writeDomainError(response, err)
 			return

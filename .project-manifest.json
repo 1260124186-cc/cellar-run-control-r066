@@ -113,6 +113,28 @@
         "domain",
         "storage"
       ]
+    },
+    {
+      "id": "profile-binding",
+      "name": "Publish, revise, and withdraw process profiles while runs stay bound",
+      "entry": "POST /v1/profiles",
+      "steps": [
+        "create and publish a versioned process profile",
+        "approve a formula that selected the profile family",
+        "start a run and record its bound profile version",
+        "revise and publish a stricter version, then withdraw the old one",
+        "verify the in-flight run still completes under its bound version",
+        "verify a new run binds the successor version and is judged by it"
+      ],
+      "success": "each run exposes the profile version it adopted and the binding reason",
+      "failure": "returns a stable name conflict, state, revision, effectiveness, or profile violation error",
+      "verification": "the check issues real HTTP requests across two profile versions and three runs",
+      "module_ids": [
+        "httpapi",
+        "service",
+        "domain",
+        "storage"
+      ]
     }
   ]
 }

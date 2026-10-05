@@ -25,6 +25,7 @@ type Formula struct {
 	ID                    string        `json:"id"`
 	Name                  string        `json:"name"`
 	Style                 string        `json:"style"`
+	ProfileName           string        `json:"profile_name,omitempty"`
 	TargetOriginalGravity float64       `json:"target_original_gravity"`
 	TargetFinalGravity    float64       `json:"target_final_gravity"`
 	MaxFermentationTempC  float64       `json:"max_fermentation_temp_c"`
@@ -48,6 +49,7 @@ func (f Formula) Clone() Formula {
 func (f *Formula) Normalize() {
 	f.Name = NormalizeName(f.Name)
 	f.Style = NormalizeName(f.Style)
+	f.ProfileName = NormalizeName(f.ProfileName)
 }
 
 func (f Formula) Validate() error {
@@ -62,6 +64,10 @@ func (f Formula) Validate() error {
 	}
 	if len([]rune(f.Style)) > 80 {
 		return FieldError(CodeInvalidInput, "style", "must not exceed 80 characters")
+	}
+	if len([]rune(f.ProfileName)) > 120 {
+		return FieldError(CodeInvalidInput, "profile_name",
+			"must not exceed 120 characters")
 	}
 	if f.TargetOriginalGravity < 1.030 || f.TargetOriginalGravity > 1.120 {
 		return FieldError(CodeInvalidInput, "target_original_gravity",
@@ -139,6 +145,25 @@ func (f *Formula) SetSteps(steps []FormulaStep) error {
 	}
 	f.Steps = append([]FormulaStep(nil), steps...)
 	f.UpdatedAt = time.Now().UTC()
+	f.Version++
+	return nil
+}
+
+func (f *Formula) SetProfile(name string, now time.Time) error {
+	if f.State != FormulaDraft {
+		return NewError(CodeFormulaState,
+			"only a draft formula can change its process profile")
+	}
+	normalized := NormalizeName(name)
+	if normalized == "" {
+		return FieldError(CodeInvalidInput, "profile_name", "is required")
+	}
+	if len([]rune(normalized)) > 120 {
+		return FieldError(CodeInvalidInput, "profile_name",
+			"must not exceed 120 characters")
+	}
+	f.ProfileName = normalized
+	f.UpdatedAt = now.UTC()
 	f.Version++
 	return nil
 }

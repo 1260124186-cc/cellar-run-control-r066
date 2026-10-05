@@ -1,9 +1,18 @@
 # Cellar Run Control
 
 Cellar Run Control is a local Go HTTP service for coordinating a small
-production cellar. It keeps formula approval, vessel availability, active
-fermentation runs, gravity observations, conditioning, completion metrics, and
-vessel cleaning in one deterministic process.
+production cellar. It keeps formula approval, versioned process profiles,
+vessel availability, active fermentation runs, gravity observations,
+conditioning, completion metrics, and vessel cleaning in one deterministic
+process.
+
+Process profiles carry the seasonal and style-specific expectations a run is
+judged against: fermentation temperature band, fermentation duration window,
+and observation thresholds. Profiles are versioned and immutable once
+published; a formula selects a profile family before approval, and each run
+binds the published version effective at its start. The binding, including
+its reason, stays attached to the run even if that version is later
+withdrawn or superseded.
 
 This repository is a healthy initialization baseline. It has no intentional
 defects and no automated test suite. Tests are intentionally deferred to a
@@ -71,8 +80,19 @@ Formula workflow:
 - `GET /v1/formulas`
 - `GET /v1/formulas/{id}`
 - `PUT /v1/formulas/{id}/steps`
+- `PUT /v1/formulas/{id}/profile`
 - `POST /v1/formulas/{id}/approve`
 - `POST /v1/formulas/{id}/retire`
+
+Process profile workflow:
+
+- `POST /v1/profiles`
+- `GET /v1/profiles`
+- `GET /v1/profiles/{id}`
+- `PUT /v1/profiles/{id}`
+- `POST /v1/profiles/{id}/publish`
+- `POST /v1/profiles/{id}/revise`
+- `POST /v1/profiles/{id}/withdraw`
 
 Vessel workflow:
 
@@ -115,6 +135,7 @@ Run each production workflow check separately:
 go run ./cmd/fermentctl check formula-approval
 go run ./cmd/fermentctl check vessel-run-lifecycle
 go run ./cmd/fermentctl check observations-completion
+go run ./cmd/fermentctl check profile-binding
 ```
 
 Each check creates a temporary snapshot directory, starts the real HTTP
