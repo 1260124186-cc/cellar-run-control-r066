@@ -15,10 +15,15 @@ type createFormulaRequest struct {
 	MaxFermentationTempC  float64 `json:"max_fermentation_temp_c"`
 	MinimumDays           int     `json:"minimum_days"`
 	MaximumDays           int     `json:"maximum_days"`
+	ProcessConfigKey      string  `json:"process_config_key"`
 }
 
 type setStepsRequest struct {
 	Steps []domain.FormulaStep `json:"steps"`
+}
+
+type selectProcessConfigRequest struct {
+	ProcessConfigKey string `json:"process_config_key"`
 }
 
 func registerFormulaRoutes(mux *http.ServeMux, app *service.Service) {
@@ -35,6 +40,7 @@ func registerFormulaRoutes(mux *http.ServeMux, app *service.Service) {
 			MaxFermentationTempC:  body.MaxFermentationTempC,
 			MinimumDays:           body.MinimumDays,
 			MaximumDays:           body.MaximumDays,
+			ProcessConfigKey:      body.ProcessConfigKey,
 		})
 		if err != nil {
 			writeDomainError(response, err)
@@ -72,6 +78,27 @@ func registerFormulaRoutes(mux *http.ServeMux, app *service.Service) {
 		}
 		formula, err := app.SetFormulaSteps(request.PathValue("id"),
 			service.SetFormulaStepsInput{ExpectedVersion: expected, Steps: body.Steps})
+		if err != nil {
+			writeDomainError(response, err)
+			return
+		}
+		writeJSON(response, http.StatusOK, formula)
+	})
+
+	mux.HandleFunc("PUT /v1/formulas/{id}/process-config", func(response http.ResponseWriter, request *http.Request) {
+		body, err := decodeJSON[selectProcessConfigRequest](response, request)
+		if !handleDecode(response, err) {
+			return
+		}
+		expected, err := expectedVersion(request)
+		if !handleDecode(response, err) {
+			return
+		}
+		formula, err := app.SelectFormulaProcessConfig(request.PathValue("id"),
+			service.SelectFormulaProcessConfigInput{
+				ExpectedVersion:  expected,
+				ProcessConfigKey: body.ProcessConfigKey,
+			})
 		if err != nil {
 			writeDomainError(response, err)
 			return

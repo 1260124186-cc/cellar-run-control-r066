@@ -14,20 +14,23 @@ const (
 )
 
 type FermentationRun struct {
-	ID             string               `json:"id"`
-	Code           string               `json:"code"`
-	FormulaID      string               `json:"formula_id"`
-	VesselID       *string              `json:"vessel_id,omitempty"`
-	PlannedVolumeL float64              `json:"planned_volume_liters"`
-	Notes          string               `json:"notes,omitempty"`
-	State          RunState             `json:"state"`
-	StartedAt      *time.Time           `json:"started_at,omitempty"`
-	EndedAt        *time.Time           `json:"ended_at,omitempty"`
-	Observations   []GravityObservation `json:"observations"`
-	Metrics        *RunMetrics          `json:"metrics,omitempty"`
-	Version        int64                `json:"version"`
-	CreatedAt      time.Time            `json:"created_at"`
-	UpdatedAt      time.Time            `json:"updated_at"`
+	ID               string                    `json:"id"`
+	Code             string                    `json:"code"`
+	FormulaID        string                    `json:"formula_id"`
+	ProcessConfigKey string                    `json:"process_config_key"`
+	VesselID         *string                   `json:"vessel_id,omitempty"`
+	PlannedVolumeL   float64                   `json:"planned_volume_liters"`
+	Notes            string                    `json:"notes,omitempty"`
+	State            RunState                  `json:"state"`
+	ProcessConfig    *ProcessConfigBinding     `json:"process_config,omitempty"`
+	ProcessDecision  *ProcessSelectionDecision `json:"process_decision,omitempty"`
+	StartedAt        *time.Time                `json:"started_at,omitempty"`
+	EndedAt          *time.Time                `json:"ended_at,omitempty"`
+	Observations     []GravityObservation      `json:"observations"`
+	Metrics          *RunMetrics               `json:"metrics,omitempty"`
+	Version          int64                     `json:"version"`
+	CreatedAt        time.Time                 `json:"created_at"`
+	UpdatedAt        time.Time                 `json:"updated_at"`
 }
 
 func (r FermentationRun) Clone() FermentationRun {
@@ -49,6 +52,14 @@ func (r FermentationRun) Clone() FermentationRun {
 		value := *r.Metrics
 		cloned.Metrics = &value
 	}
+	if r.ProcessConfig != nil {
+		value := *r.ProcessConfig
+		cloned.ProcessConfig = &value
+	}
+	if r.ProcessDecision != nil {
+		value := *r.ProcessDecision
+		cloned.ProcessDecision = &value
+	}
 	return cloned
 }
 
@@ -59,6 +70,11 @@ func (r FermentationRun) Validate() error {
 	if r.PlannedVolumeL <= 0 {
 		return FieldError(CodeInvalidInput, "planned_volume_liters",
 			"must be greater than zero")
+	}
+	if r.ProcessConfigKey != "" {
+		if err := ValidateIdentifier(r.ProcessConfigKey, "process_config_key"); err != nil {
+			return err
+		}
 	}
 	if len([]rune(r.Notes)) > 1000 {
 		return FieldError(CodeInvalidInput, "notes",
@@ -79,12 +95,15 @@ func (r *FermentationRun) ReserveVessel(vesselID string, now time.Time) error {
 	return nil
 }
 
-func (r *FermentationRun) StartFermentation(now time.Time) error {
+func (r *FermentationRun) StartFermentation(binding ProcessConfigBinding, decision ProcessSelectionDecision, now time.Time) error {
 	if r.State != RunReserved || r.VesselID == nil {
 		return NewError(CodeRunState, "only a reserved run can start fermentation")
 	}
 	stamp := now.UTC()
+	binding.BoundAt = stamp
 	r.State = RunFermenting
+	r.ProcessConfig = &binding
+	r.ProcessDecision = &decision
 	r.StartedAt = &stamp
 	r.UpdatedAt = stamp
 	r.Version++
@@ -104,7 +123,10 @@ func (r *FermentationRun) AddObservation(observation GravityObservation) error {
 		value := r.Observations[len(r.Observations)-1]
 		previous = &value
 	}
-	if err := ValidateObservation(*r.StartedAt, previous, observation, observation.ReceivedAt); err != nil {
+	if r.ProcessConfig == nil {
+		return NewError(CodeProcessStandard, "run has no bound process configuration")
+	}
+	if err := ValidateObservation(*r.StartedAt, previous, observation, observation.ReceivedAt, *r.ProcessConfig); err != nil {
 		return err
 	}
 	expected := len(r.Observations) + 1
@@ -123,9 +145,18 @@ func (r *FermentationRun) BeginConditioning(now time.Time) error {
 	if r.State != RunFermenting {
 		return NewError(CodeRunState, "only a fermenting run can enter conditioning")
 	}
-	if len(r.Observations) < 2 {
-		return NewError(CodeRunState,
-			"conditioning requires at least two observations")
+	if r.ProcessConfig == nil || r.StartedAt == nil {
+		return NewError(CodeProcessStandard, "run has no bound process configuration")
+	}
+	if len(r.Observations) < r.ProcessConfig.ConditioningObservations {
+		return NewError(CodeProcessStandard,
+			"conditioning requires the number of observations bound at run start")
+	}
+	elapsed := now.UTC().Sub(r.StartedAt.UTC())
+	if r.ProcessConfig.MinimumDays > 0 &&
+		elapsed < time.Duration(r.ProcessConfig.MinimumDays)*24*time.Hour {
+		return NewError(CodeProcessStandard,
+			"conditioning was requested before the bound minimum fermentation duration")
 	}
 	r.State = RunConditioning
 	r.UpdatedAt = now.UTC()
@@ -137,9 +168,17 @@ func (r *FermentationRun) Complete(originalGravity float64, now time.Time) error
 	if r.State != RunConditioning {
 		return NewError(CodeRunState, "only a conditioning run can be completed")
 	}
-	if len(r.Observations) < 3 {
-		return NewError(CodeRunState,
-			"completion requires at least three observations")
+	if r.ProcessConfig == nil || r.StartedAt == nil {
+		return NewError(CodeProcessStandard, "run has no bound process configuration")
+	}
+	if len(r.Observations) < r.ProcessConfig.CompletionObservations {
+		return NewError(CodeProcessStandard,
+			"completion requires the number of observations bound at run start")
+	}
+	elapsed := now.UTC().Sub(r.StartedAt.UTC())
+	if elapsed > time.Duration(r.ProcessConfig.MaximumDays)*24*time.Hour {
+		return NewError(CodeProcessStandard,
+			"completion was requested after the bound maximum fermentation duration")
 	}
 	stamp := now.UTC()
 	final := r.Observations[len(r.Observations)-1]

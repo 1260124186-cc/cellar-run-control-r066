@@ -45,6 +45,11 @@ func (s *Service) CreateRun(input CreateRunInput) (domain.FermentationRun, error
 			return domain.NewError(domain.CodeFormulaState,
 				"run requires an approved formula")
 		}
+		run.ProcessConfigKey = formula.ProcessConfigKey
+		if run.ProcessConfigKey == "" {
+			return domain.NewError(domain.CodeProcessStandard,
+				"approved formula has no process configuration key")
+		}
 		if _, exists := snapshot.RunIndex[run.Code]; exists {
 			return domain.NewError(domain.CodeRunConflict,
 				"a run with the same code already exists")
@@ -116,14 +121,20 @@ func (s *Service) StartRun(
 		if run.VesselID == nil {
 			return domain.NewError(domain.CodeRunState, "run has no vessel")
 		}
+		now := s.clock.Now()
+		standard, decision, err := domain.SelectProcessConfig(
+			snapshot.ProcessConfigs, run.ProcessConfigKey, now)
+		if err != nil {
+			return err
+		}
 		vessel, ok := snapshot.Vessels[*run.VesselID]
 		if !ok {
 			return domain.NewError(domain.CodeVesselNotFound, "vessel was not found")
 		}
-		if err := vessel.StartRun(run.ID, s.clock.Now()); err != nil {
+		if err := vessel.StartRun(run.ID, now); err != nil {
 			return err
 		}
-		if err := run.StartFermentation(s.clock.Now()); err != nil {
+		if err := run.StartFermentation(standard.Binding(now), decision, now); err != nil {
 			return err
 		}
 		snapshot.Runs[id] = run.Clone()

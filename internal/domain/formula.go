@@ -31,6 +31,7 @@ type Formula struct {
 	MinimumDays           int           `json:"minimum_days"`
 	MaximumDays           int           `json:"maximum_days"`
 	Steps                 []FormulaStep `json:"steps"`
+	ProcessConfigKey      string        `json:"process_config_key,omitempty"`
 	State                 FormulaState  `json:"state"`
 	Version               int64         `json:"version"`
 	CreatedAt             time.Time     `json:"created_at"`
@@ -90,7 +91,16 @@ func (f Formula) Validate() error {
 	if len(f.Steps) > 24 {
 		return FieldError(CodeInvalidInput, "steps", "must contain at most 24 entries")
 	}
+	if f.ProcessConfigKey != "" {
+		if err := ValidateIdentifier(f.ProcessConfigKey, "process_config_key"); err != nil {
+			return err
+		}
+	}
 	if f.State == FormulaApproved || f.State == FormulaRetired {
+		if f.ProcessConfigKey == "" {
+			return FieldError(CodeInvalidInput, "process_config_key",
+				"is required before approval")
+		}
 		if err := ValidateFormulaSteps(f.Steps, true); err != nil {
 			return err
 		}
@@ -143,12 +153,31 @@ func (f *Formula) SetSteps(steps []FormulaStep) error {
 	return nil
 }
 
+func (f *Formula) SetProcessConfigKey(key string, now time.Time) error {
+	if f.State != FormulaDraft {
+		return NewError(CodeFormulaState,
+			"only a draft formula can choose a process configuration")
+	}
+	normalized := NormalizeName(key)
+	if err := ValidateIdentifier(normalized, "process_config_key"); err != nil {
+		return err
+	}
+	f.ProcessConfigKey = normalized
+	f.UpdatedAt = now.UTC()
+	f.Version++
+	return nil
+}
+
 func (f *Formula) Approve(now time.Time) error {
 	if f.State != FormulaDraft {
 		return NewError(CodeFormulaState, "only a draft formula can be approved")
 	}
 	if err := ValidateFormulaSteps(f.Steps, true); err != nil {
 		return err
+	}
+	if f.ProcessConfigKey == "" {
+		return FieldError(CodeInvalidInput, "process_config_key",
+			"must be selected before approval")
 	}
 	stamp := now.UTC()
 	f.State = FormulaApproved

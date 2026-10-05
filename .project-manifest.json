@@ -61,10 +61,11 @@
       "steps": [
         "create a draft formula with validated target values",
         "set the process step list in one operation",
+        "select a versioned process configuration key",
         "approve the complete formula",
         "read the immutable approved aggregate"
       ],
-      "success": "returns the approved formula with version 3",
+      "success": "returns the approved formula with version 4",
       "failure": "returns a stable validation, duplicate, or state error without partial writes",
       "verification": "the check issues real HTTP requests and inspects success and failure responses",
       "module_ids": [
@@ -107,6 +108,26 @@
       "success": "returns computed metrics and a vessel in cleaning state",
       "failure": "returns a stable range, sequence, time, state, or count error",
       "verification": "the check issues real HTTP requests and rejects malformed observations",
+      "module_ids": [
+        "httpapi",
+        "service",
+        "domain",
+        "storage"
+      ]
+    },
+    {
+      "id": "process-configuration-versioning",
+      "name": "Publish seasonal process configurations and preserve per-run bindings",
+      "entry": "POST /v1/process-configs",
+      "steps": [
+        "publish an effective process configuration version",
+        "start a run and snapshot its selected standard",
+        "publish a future-effective successor and withdraw the prior version",
+        "cross the effective boundary, start a second run, and verify both runs use their own snapshot"
+      ],
+      "success": "each run records its selected version, decision basis, and immutable process values",
+      "failure": "returns a stable configuration state, availability, standard, or revision error",
+      "verification": "the check issues real HTTP requests across a controlled effective-time boundary",
       "module_ids": [
         "httpapi",
         "service",

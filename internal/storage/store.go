@@ -63,6 +63,9 @@ func normalizeSnapshot(value domain.Snapshot) (domain.Snapshot, error) {
 	if value.Formulas == nil {
 		value.Formulas = map[string]domain.Formula{}
 	}
+	if value.ProcessConfigs == nil {
+		value.ProcessConfigs = map[string]domain.ProcessConfig{}
+	}
 	if value.Vessels == nil {
 		value.Vessels = map[string]domain.Vessel{}
 	}
@@ -71,6 +74,9 @@ func normalizeSnapshot(value domain.Snapshot) (domain.Snapshot, error) {
 	}
 	if value.NameIndex == nil {
 		value.NameIndex = map[string]string{}
+	}
+	if value.ProcessDraftIndex == nil {
+		value.ProcessDraftIndex = map[string]string{}
 	}
 	if value.VesselIndex == nil {
 		value.VesselIndex = map[string]string{}
@@ -97,6 +103,33 @@ func validateIndexes(value domain.Snapshot) error {
 		expectedNames[key] = id
 	}
 	if err := compareIndexes("formula name", value.NameIndex, expectedNames); err != nil {
+		return err
+	}
+
+	expectedProcessDrafts := make(map[string]string)
+	configVersions := make(map[string]map[int]string)
+	for id, config := range value.ProcessConfigs {
+		if id != config.ID {
+			return fmt.Errorf("process config map key does not match its id")
+		}
+		if err := config.Validate(); err != nil {
+			return fmt.Errorf("process config %s is invalid: %w", id, err)
+		}
+		if config.State == domain.ProcessConfigDraft {
+			if existing, found := expectedProcessDrafts[config.Key]; found && existing != id {
+				return fmt.Errorf("process config draft index contains a duplicate key")
+			}
+			expectedProcessDrafts[config.Key] = id
+		}
+		if _, ok := configVersions[config.Key]; !ok {
+			configVersions[config.Key] = map[int]string{}
+		}
+		if existing, found := configVersions[config.Key][config.ConfigVersion]; found && existing != id {
+			return fmt.Errorf("process config contains a duplicate version")
+		}
+		configVersions[config.Key][config.ConfigVersion] = id
+	}
+	if err := compareIndexes("process config draft", value.ProcessDraftIndex, expectedProcessDrafts); err != nil {
 		return err
 	}
 

@@ -71,8 +71,18 @@ Formula workflow:
 - `GET /v1/formulas`
 - `GET /v1/formulas/{id}`
 - `PUT /v1/formulas/{id}/steps`
+- `PUT /v1/formulas/{id}/process-config`
 - `POST /v1/formulas/{id}/approve`
 - `POST /v1/formulas/{id}/retire`
+
+Process configuration workflow:
+
+- `POST /v1/process-configs`
+- `GET /v1/process-configs`
+- `GET /v1/process-configs/{id}`
+- `PUT /v1/process-configs/{id}`
+- `POST /v1/process-configs/{id}/publish`
+- `POST /v1/process-configs/{id}/withdraw`
 
 Vessel workflow:
 
@@ -107,6 +117,20 @@ shape:
 }
 ```
 
+## Process Configuration Binding
+
+A draft formula chooses a process configuration key before approval. When a
+reserved run starts, the service selects the highest published version for that
+key whose `effective_at` is not later than the start time. The run stores the
+complete selected standard and a decision record with the evaluated time,
+number of matching candidates, and tie-breaking basis.
+
+Observations, conditioning, and completion then use only that stored snapshot.
+Publishing a newer version, withdrawing the selected version, or crossing
+another version's effective time during fermentation cannot alter a started or
+completed run. Future-effective versions are visible after publication but do
+not permit starting until their effective time.
+
 ## Workflow Checks
 
 Run each production workflow check separately:
@@ -115,6 +139,7 @@ Run each production workflow check separately:
 go run ./cmd/fermentctl check formula-approval
 go run ./cmd/fermentctl check vessel-run-lifecycle
 go run ./cmd/fermentctl check observations-completion
+go run ./cmd/fermentctl check process-configuration-versioning
 ```
 
 Each check creates a temporary snapshot directory, starts the real HTTP

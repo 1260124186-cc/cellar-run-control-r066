@@ -14,11 +14,44 @@ type CreateFormulaInput struct {
 	MaxFermentationTempC  float64
 	MinimumDays           int
 	MaximumDays           int
+	ProcessConfigKey      string
 }
 
 type SetFormulaStepsInput struct {
 	ExpectedVersion *int64
 	Steps           []domain.FormulaStep
+}
+
+type CreateProcessConfigInput struct {
+	Key                      string
+	Name                     string
+	MinFermentationTempC     float64
+	MaxFermentationTempC     float64
+	MinimumDays              int
+	MaximumDays              int
+	ConditioningObservations int
+	CompletionObservations   int
+}
+
+type UpdateProcessConfigInput struct {
+	ExpectedVersion          *int64
+	Name                     string
+	MinFermentationTempC     float64
+	MaxFermentationTempC     float64
+	MinimumDays              int
+	MaximumDays              int
+	ConditioningObservations int
+	CompletionObservations   int
+}
+
+type PublishProcessConfigInput struct {
+	ExpectedVersion *int64
+	EffectiveAt     time.Time
+}
+
+type SelectFormulaProcessConfigInput struct {
+	ExpectedVersion  *int64
+	ProcessConfigKey string
 }
 
 type VersionInput struct {

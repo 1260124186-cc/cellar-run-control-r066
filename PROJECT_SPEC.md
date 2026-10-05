@@ -22,6 +22,36 @@ deferred to a later engineering task.
 
 ## Entities
 
+### ProcessConfiguration
+
+A process configuration is a versioned, immutable-after-publication cellar
+standard. Each version belongs to a stable lowercase key (for example,
+`winter-stout`) and contains fermentation temperature bounds, minimum and
+maximum planned fermentation days, and the observation counts required for
+conditioning and completion.
+
+States are `draft`, `published`, and `withdrawn`.
+
+- A key has at most one draft at a time.
+- Creating the first draft assigns `config_version` 1; later drafts for the
+  same key receive the next integer.
+- Temperature bounds are 5 to 40 Celsius, and the minimum cannot exceed the
+  maximum.
+- The minimum fermentation duration is 0 to 120 days; the maximum is 1 to 120
+  days and must not be below the minimum.
+- Observation thresholds are 1 to 500; completion cannot require fewer
+  observations than conditioning.
+- Publishing captures the effective timestamp and publication time. Published
+  values cannot be modified. A future effective timestamp is valid but does not
+  govern a run until that time.
+- Withdrawal marks a published version unavailable for future run starts. It
+  never mutates or invalidates a snapshot already bound to a run.
+- When multiple published versions for a key are effective at the same time,
+  selection uses the highest `effective_at`, then `config_version`, then
+  publication time, then ID as deterministic tie-breakers.
+- The run decision lists every version in the family, its state, timestamps,
+  eligibility, and the reason it was or was not selected.
+
 ### Formula
 
 A formula contains an identifier, normalized name, style label, target original
@@ -41,7 +71,12 @@ States are `draft`, `approved`, and `retired`.
 - Step sequence values must be contiguous and start at 1.
 - Step temperatures are in the inclusive range 5 to 90 Celsius.
 - Step hold times are 1 to 1440 minutes.
-- `draft -> approved` requires a complete valid step list.
+- `draft -> approved` requires a complete valid step list and a selected
+  process configuration key that has at least one published or withdrawn
+  version.
+- A draft chooses the process configuration key before approval. Approved
+  formulas retain that key but do not pin the version; each run resolves and
+  snapshots the effective version when fermentation starts.
 - An approved formula is immutable.
 - `approved -> retired` is allowed only when no run currently uses it.
 
@@ -72,6 +107,17 @@ and `aborted`.
 
 - Planned volume is greater than zero and cannot exceed vessel capacity.
 - Only an approved formula may be attached to a run.
+- Run creation records the formula's process configuration key.
+- `reserved -> fermenting` resolves the currently effective published
+  configuration for that key, stores a complete copy of the selected values,
+  and records a decision containing the evaluated time, candidate count, and
+  deterministic selection basis.
+- Observation temperature, conditioning observation count, minimum elapsed
+  fermentation time, completion observation count, and maximum elapsed
+  fermentation time are judged only against the configuration snapshotted on
+  the run. Later publication or withdrawal cannot change those checks.
+- A run cannot start when no published version for its key is effective at the
+  start time.
 - `planned -> reserved` atomically reserves an available vessel.
 - `reserved -> fermenting` requires that the vessel still belongs to the run.
 - `fermenting -> conditioning` requires at least two observations.
@@ -92,6 +138,8 @@ time, gravity, temperature, optional note, and receipt time.
 
 - Gravity is in the inclusive range 0.980 to 1.200.
 - Temperature is in the inclusive range -5 to 60 Celsius.
+- Temperature is first checked against the physical instrument range -5 to 60
+  Celsius and then the bound process configuration range.
 - Observed time begins at or after the run start.
 - Observation times strictly increase within a run.
 - Gravity must not rise more than 0.010 above the immediately preceding value.
@@ -105,6 +153,7 @@ Public entry points are:
 
 - `POST /v1/formulas`
 - `PUT /v1/formulas/{id}/steps`
+- `PUT /v1/formulas/{id}/process-config`
 - `POST /v1/formulas/{id}/approve`
 - `GET /v1/formulas/{id}`
 
@@ -115,7 +164,28 @@ and repeated approval return stable error codes without partial writes.
 This path crosses HTTP protocol handling, application orchestration, domain
 rules, and snapshot storage.
 
-### 2. Vessel Run Lifecycle
+### 2. Versioned Process Configuration
+
+Public entry points are:
+
+- `POST /v1/process-configs`
+- `GET /v1/process-configs`
+- `GET /v1/process-configs/{id}`
+- `PUT /v1/process-configs/{id}`
+- `POST /v1/process-configs/{id}/publish`
+- `POST /v1/process-configs/{id}/withdraw`
+
+A supervisor creates a draft for a stable configuration key, revises it while
+still a draft, and publishes it with an explicit effective time. Another
+supervisor can prepare the next draft only after the previous draft is
+published or withdrawn. Withdrawing an old version prevents future starts
+from selecting it, while every started run continues using the exact snapshot
+it recorded at start.
+
+This path crosses HTTP protocol handling, application orchestration, version
+resolution, domain validation, and snapshot storage.
+
+### 3. Vessel Run Lifecycle
 
 Public entry points are:
 
@@ -133,7 +203,7 @@ produce stable failures without changing vessel or run state.
 This path crosses HTTP protocol handling, application orchestration, domain
 rules, storage coordination, and resource lifecycle.
 
-### 3. Observations And Completion
+### 4. Observations And Completion
 
 Public entry points are:
 
@@ -217,6 +287,7 @@ behavior, and exit without external services:
 - `go run ./cmd/fermentctl check formula-approval`
 - `go run ./cmd/fermentctl check vessel-run-lifecycle`
 - `go run ./cmd/fermentctl check observations-completion`
+- `go run ./cmd/fermentctl check process-configuration-versioning`
 
 ## Scope Limits
 

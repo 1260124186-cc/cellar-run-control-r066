@@ -18,6 +18,7 @@ func (s *Service) CreateFormula(input CreateFormulaInput) (domain.Formula, error
 		MinimumDays:           input.MinimumDays,
 		MaximumDays:           input.MaximumDays,
 		Steps:                 []domain.FormulaStep{},
+		ProcessConfigKey:      domain.NormalizeName(input.ProcessConfigKey),
 		State:                 domain.FormulaDraft,
 		Version:               1,
 		CreatedAt:             now,
@@ -76,6 +77,37 @@ func (s *Service) SetFormulaSteps(
 	return updated, nil
 }
 
+func (s *Service) SelectFormulaProcessConfig(
+	id string,
+	input SelectFormulaProcessConfigInput,
+) (domain.Formula, error) {
+	var updated domain.Formula
+	err := s.store.Execute(func(snapshot *domain.Snapshot) error {
+		formula, ok := snapshot.Formulas[id]
+		if !ok {
+			return domain.NewError(domain.CodeFormulaNotFound, "formula was not found")
+		}
+		if err := s.checkExpected(formula.Version, input.ExpectedVersion); err != nil {
+			return err
+		}
+		key := domain.NormalizeName(input.ProcessConfigKey)
+		if err := formula.SetProcessConfigKey(key, s.clock.Now()); err != nil {
+			return err
+		}
+		if !processConfigFamilyExists(snapshot, key) {
+			return domain.NewError(domain.CodeProcessConfigNotFound,
+				"process configuration family was not found")
+		}
+		snapshot.Formulas[id] = formula.Clone()
+		updated = formula.Clone()
+		return nil
+	})
+	if err != nil {
+		return domain.Formula{}, err
+	}
+	return updated, nil
+}
+
 func (s *Service) ApproveFormula(id string, input VersionInput) (domain.Formula, error) {
 	var updated domain.Formula
 	err := s.store.Execute(func(snapshot *domain.Snapshot) error {
@@ -88,6 +120,10 @@ func (s *Service) ApproveFormula(id string, input VersionInput) (domain.Formula,
 		}
 		if err := formula.Approve(s.clock.Now()); err != nil {
 			return err
+		}
+		if !domain.ProcessConfigFamilyHasPublished(snapshot.ProcessConfigs, formula.ProcessConfigKey) {
+			return domain.NewError(domain.CodeProcessConfigUnavailable,
+				"approval requires at least one published process configuration version")
 		}
 		snapshot.Formulas[id] = formula
 		updated = formula.Clone()
@@ -164,6 +200,15 @@ func (s *Service) ListFormulas() ([]domain.Formula, error) {
 		return formulas[i].Name < formulas[j].Name
 	})
 	return formulas, nil
+}
+
+func processConfigFamilyExists(snapshot *domain.Snapshot, key string) bool {
+	for _, config := range snapshot.ProcessConfigs {
+		if config.Key == key {
+			return true
+		}
+	}
+	return false
 }
 
 func timestampPointer(value time.Time) *time.Time {

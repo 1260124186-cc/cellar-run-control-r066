@@ -17,6 +17,7 @@ func ValidateObservation(
 	previous *GravityObservation,
 	candidate GravityObservation,
 	now time.Time,
+	standard ProcessConfigBinding,
 ) error {
 	if candidate.Gravity < 0.980 || candidate.Gravity > 1.200 {
 		return FieldError(CodeInvalidInput, "gravity",
@@ -25,6 +26,11 @@ func ValidateObservation(
 	if candidate.TemperatureC < -5 || candidate.TemperatureC > 60 {
 		return FieldError(CodeInvalidInput, "temperature_c",
 			"must be between -5 and 60 Celsius")
+	}
+	if candidate.TemperatureC < standard.MinFermentationTempC ||
+		candidate.TemperatureC > standard.MaxFermentationTempC {
+		return FieldError(CodeProcessStandard, "temperature_c",
+			"must stay within the fermentation temperature range bound at run start")
 	}
 	if len([]rune(candidate.Note)) > 500 {
 		return FieldError(CodeInvalidInput, "note",
